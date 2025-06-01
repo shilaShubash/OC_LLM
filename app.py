@@ -50,7 +50,8 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 # --- Main Application UI (after page config and setup) ---
-st.title("Consultation with an Occupational Therapy Mentor")
+st.title("LLM2LLL")
+st.markdown("Welcome! This chat provides mentoring, guidance, and advice for occupational therapists.")
 st.caption("Powered by Gemini 1.5 Flash")
 
 # --- Displaying Chat History ---
