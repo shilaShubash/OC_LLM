@@ -29,7 +29,6 @@ def get_generative_model(system_instruction_payload):
 
 # --- API Key Configuration ---
 # This is a critical step. If it fails, the script might stop before rendering the sidebar.
-st.text("DEBUG: Checking API Key...") # Temporary debug message
 
 ACTUAL_API_KEY = os.environ.get("GOOGLE_API_KEY_FOR_APP")
 
@@ -40,7 +39,6 @@ if not ACTUAL_API_KEY:
 
 try:
     genai.configure(api_key=ACTUAL_API_KEY)
-    st.text("DEBUG: genai.configure(api_key=...) successful.") # Temporary debug message
 except Exception as e:
     st.error(f"CRITICAL ERROR: Error configuring the Google GenAI API with the provided key: {e}")
     st.caption("This might indicate an invalid API key or a problem with the Google Cloud project.")
@@ -48,7 +46,6 @@ except Exception as e:
 
 # --- Sidebar for System Prompt Configuration ---
 # If the script reaches this point, the API key was found and genai.configure was successful.
-st.sidebar.info("Sidebar rendering started.") # Debug message IN THE SIDEBAR
 st.sidebar.header("Mentor Configuration")
 custom_system_prompt = st.sidebar.text_area(
     "Define the mentor's behavior (System Prompt):",
