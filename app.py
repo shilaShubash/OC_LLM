@@ -13,9 +13,7 @@ DEFAULT_SYSTEM_PROMPT = "You are an experienced mentor for occupational therapis
 # --- Model Loading Function (cached based on system_instruction) ---
 @st.cache_resource
 def get_generative_model(system_instruction_payload):
-    # This function is designed to be called after API key is configured.
-    # We add a print to sidebar here just to confirm if this part of code is ever reached.
-    # st.sidebar.write(f"Attempting to load model with prompt: {system_instruction_payload[:30]}...") # Debug
+    # st.sidebar.write(f"DEBUG: Loading/Re-initializing model with system prompt: {system_instruction_payload[:50]}...") # Optional debug
     try:
         model = genai.GenerativeModel(
             model_name='gemini-1.5-flash',
@@ -23,84 +21,75 @@ def get_generative_model(system_instruction_payload):
         )
         return model
     except Exception as e:
-        # This error will appear in the main panel if model loading fails
-        st.error(f"Error creating GenerativeModel: {e}")
+        st.error(f"Error creating GenerativeModel with the provided system prompt: {e}")
         return None
 
 # --- API Key Configuration ---
-# This is a critical step. If it fails, the script might stop before rendering the sidebar.
-
 ACTUAL_API_KEY = os.environ.get("GOOGLE_API_KEY_FOR_APP")
 
 if not ACTUAL_API_KEY:
-    st.error("CRITICAL ERROR: Google API key (GOOGLE_API_KEY_FOR_APP) is missing from environment secrets.")
+    st.error("Critical error: Google API key (GOOGLE_API_KEY_FOR_APP) is missing from environment secrets.")
     st.caption("Please ensure you have correctly set this secret in your deployment platform (e.g., Streamlit Community Cloud settings). The application cannot proceed without it.")
-    st.stop() # Halts script execution if key is missing
+    st.stop() 
 
 try:
     genai.configure(api_key=ACTUAL_API_KEY)
 except Exception as e:
-    st.error(f"CRITICAL ERROR: Error configuring the Google GenAI API with the provided key: {e}")
+    st.error(f"Critical error: Error configuring the Google GenAI API with the provided key: {e}")
     st.caption("This might indicate an invalid API key or a problem with the Google Cloud project.")
-    st.stop() # Halts script execution if configuration fails
+    st.stop() 
 
 # --- Sidebar for System Prompt Configuration ---
-# If the script reaches this point, the API key was found and genai.configure was successful.
 st.sidebar.header("Mentor Configuration")
-custom_system_prompt = st.sidebar.text_area(
+custom_system_prompt_from_sidebar = st.sidebar.text_area(
     "Define the mentor's behavior (System Prompt):",
-    value=st.session_state.get("system_prompt_for_chat", DEFAULT_SYSTEM_PROMPT),
+    value=st.session_state.get("system_prompt_for_chat", DEFAULT_SYSTEM_PROMPT), 
     height=250,
-    key="system_prompt_input_widget"
+    key="system_prompt_input_widget" 
 )
 
 if "system_prompt_for_chat" not in st.session_state:
     st.session_state.system_prompt_for_chat = DEFAULT_SYSTEM_PROMPT
 
 if st.sidebar.button("Apply New System Prompt & Restart Chat"):
-    if custom_system_prompt != st.session_state.system_prompt_for_chat:
-        st.session_state.system_prompt_for_chat = custom_system_prompt
-        st.session_state.messages = [] # Clear chat history
+    if custom_system_prompt_from_sidebar != st.session_state.system_prompt_for_chat:
+        st.session_state.system_prompt_for_chat = custom_system_prompt_from_sidebar
+        st.session_state.messages = [] 
         if "chat_session" in st.session_state:
-            del st.session_state.chat_session # Delete old chat session
-        
-        # Clear the cached model to ensure the new system prompt is used for model re-creation
-        # Note: get_generative_model is keyed by its argument, so calling it with a new
-        # system_prompt_for_chat should inherently lead to a new/different cached model instance.
-        # Explicitly clearing might be an option if issues persist:
-        # get_generative_model.clear() # Uncomment this if you suspect caching issues with system prompt changes
-
+            del st.session_state.chat_session 
+        if "user_turn_count" in st.session_state: # Reset turn counter as well
+            del st.session_state.user_turn_count
         st.sidebar.success("System prompt updated! Chat has been reset.")
-        st.experimental_rerun() # Rerun the script to apply all changes cleanly
+        st.experimental_rerun() 
     else:
         st.sidebar.info("System prompt is the same as the current one. No changes applied.")
 
-st.sidebar.markdown("---") # Separator in sidebar
+st.sidebar.markdown("---") 
 
-# --- Load Model (uses the system prompt from session state) ---
-# This call now happens AFTER the sidebar code.
+# --- Load Model ---
 model = get_generative_model(st.session_state.system_prompt_for_chat)
 
 if not model:
     st.error("Failed to load/initialize the generative model. Application cannot proceed.")
-    # The error from get_generative_model itself should have already been displayed.
-    st.stop() # Halts script execution if model loading fails
+    st.stop() 
 
-# --- Chat Session Initialization ---
+# --- Initialize Session State Variables ---
 if "chat_session" not in st.session_state:
     st.session_state.chat_session = model.start_chat(history=[])
-    # Initialize messages only if chat session is new AND messages are not already populated
-    # (e.g. by a prompt change reset)
     if not st.session_state.get("messages"): 
          st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I assist you today based on the current system prompt?"}]
 
 if "messages" not in st.session_state: 
     st.session_state.messages = []
 
+# Initialize user turn counter for prompt reminder logic
+if "user_turn_count" not in st.session_state:
+    st.session_state.user_turn_count = 0
+
 
 # --- Main Application UI ---
-st.title("LLM2LLL")
-st.markdown("Welcome! This chat provides mentoring, guidance, and advice for occupational therapists. You can customize the mentor's behavior using the sidebar.")
+st.title("LLM2LLL") 
+st.markdown("Welcome! This chat provides mentoring, guidance, and advice for occupational therapists. You can customize the mentor's behavior using the sidebar.") 
 st.caption("Powered by Gemini 1.5 Flash")
 
 # --- Displaying Chat History ---
@@ -109,15 +98,30 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # --- Getting User Input and Processing It ---
-if user_prompt := st.chat_input("Type your question here..."):
-    st.session_state.messages.append({"role": "user", "content": user_prompt})
+if user_input_from_chat := st.chat_input("Type your question here..."):
+    # Increment user turn counter each time they send a message
+    st.session_state.user_turn_count += 1
+
+    st.session_state.messages.append({"role": "user", "content": user_input_from_chat})
     with st.chat_message("user"): 
-        st.markdown(user_prompt)
+        st.markdown(user_input_from_chat)
 
     if "chat_session" in st.session_state: 
         try:
             chat_session_to_use = st.session_state.chat_session
-            model_response = chat_session_to_use.send_message(user_prompt)
+            
+            prompt_to_send_to_llm = user_input_from_chat # Default: original user input
+            
+            # --- Conditionally augment prompt with system prompt reminder ---
+            REMINDER_FREQUENCY = 3 # Remind every 3 user turns
+            if st.session_state.user_turn_count % REMINDER_FREQUENCY == 0:
+                current_system_prompt_for_llm = st.session_state.get("system_prompt_for_chat", DEFAULT_SYSTEM_PROMPT)
+                prompt_to_send_to_llm = f"Remember your core instructions are: '{current_system_prompt_for_llm}'. Now, respond to the user's latest message: '{user_input_from_chat}'"
+                # You can add a small visual cue in the sidebar if a reminder was injected:
+                # st.sidebar.caption(f"Sys-prompt reminder sent on turn {st.session_state.user_turn_count}.")
+            
+            # Send the (potentially augmented) prompt to the model
+            model_response = chat_session_to_use.send_message(prompt_to_send_to_llm)
             response_text = model_response.text
 
             st.session_state.messages.append({"role": "assistant", "content": response_text})
@@ -132,4 +136,3 @@ if user_prompt := st.chat_input("Type your question here..."):
             st.toast(f"Error: {e}")
     else:
         st.error("Chat session is not initialized. Please ensure the model and system prompt are correctly configured.")
-
