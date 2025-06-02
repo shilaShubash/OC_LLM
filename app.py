@@ -77,7 +77,7 @@ if not model:
 if "chat_session" not in st.session_state:
     st.session_state.chat_session = model.start_chat(history=[])
     if not st.session_state.get("messages"): 
-         st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I assist you today based on the current system prompt?"}]
+         st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I assist you today?"}]
 
 if "messages" not in st.session_state: 
     st.session_state.messages = []
