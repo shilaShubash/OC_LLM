@@ -15,7 +15,7 @@ def get_generative_model(system_instruction_payload):
     # st.sidebar.write(f"DEBUG: Loading/Re-initializing model with system prompt: {system_instruction_payload[:50]}...") # Optional debug
     try:
         model = genai.GenerativeModel(
-            model_name='gemini-1.5-flash',
+            model_name = "models/gemini-2.5-flash",
             system_instruction=system_instruction_payload
         )
         return model
@@ -61,12 +61,12 @@ custom_system_prompt_from_sidebar = st.sidebar.text_area(
 if st.sidebar.button("Apply New System Prompt & Restart Chat"):
     if custom_system_prompt_from_sidebar != st.session_state.system_prompt_for_chat:
         st.session_state.system_prompt_for_chat = custom_system_prompt_from_sidebar
-        st.session_state.messages = [] 
+        st.session_state.messages = []  
         if "chat_session" in st.session_state:
-            del st.session_state.chat_session 
+            del st.session_state.chat_session  
         st.session_state.user_turn_count = 0 # Reset turn counter
         st.sidebar.success("System prompt updated! Chat has been reset.")
-        st.experimental_rerun() 
+        st.rerun()  
     else:
         st.sidebar.info("System prompt is the same as the current one. No changes applied.")
 
