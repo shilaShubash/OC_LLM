@@ -106,7 +106,7 @@ if "chat_session" not in st.session_state:
 # --- Main Application UI ---
 st.title("LLM2LLL") 
 st.markdown("Welcome! This chat provides mentoring, guidance, and advice for occupational therapists. You can customize the mentor's behavior and reminders using the sidebar.") 
-st.caption("Powered by Gemini 1.5 Flash")
+st.caption("Powered by Gemini 2.5 Flash")
 
 # --- Displaying Chat History ---
 for message in st.session_state.messages:
