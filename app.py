@@ -150,4 +150,3 @@ if user_input_from_chat := st.chat_input("Type your question here..."):
             st.toast(f"Error: {e}")
     else:
         st.error("Chat session is not initialized. Please ensure the model and system prompt are correctly configured.")
-
