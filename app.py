@@ -1,18 +1,21 @@
-
 import streamlit as st
 import google.generativeai as genai
 import os
 
-# --- Application Page Settings ---
+#Application Page Settings
 st.set_page_config(page_title="LLM2LLL Customizable Mentor", page_icon=None)
 
-# --- Default System Prompt ---
-DEFAULT_SYSTEM_PROMPT = "You are an experienced mentor for occupational therapists. You must provide professional, supportive and Short answers. Use clear and respectful language."
+#Prompts
+HARDCODED_SYSTEM_PROMPT = "You are an experienced mentor for occupational therapists. You must provide professional, supportive and Short answers. Use clear and respectful language."
+HARDCODED_REMINDER = "Remember to stay supportive and professional." # Leave "" (empty) to disable
+REMINDER_FREQUENCY = 3 # The reminder will be injected every N turns
 
-# --- Model Loading Function (cached based on system_instruction) ---
+
+#Model Loading Function
 @st.cache_resource
 def get_generative_model(system_instruction_payload):
-    # st.sidebar.write(f"DEBUG: Loading/Re-initializing model with system prompt: {system_instruction_payload[:50]}...") # Optional debug
+    # Change 2: Removed the debug line that used the sidebar
+    # st.sidebar.write(f"DEBUG: ...") 
     try:
         model = genai.GenerativeModel(
             model_name = "models/gemini-2.5-flash",
@@ -23,7 +26,7 @@ def get_generative_model(system_instruction_payload):
         st.error(f"Error creating GenerativeModel with the provided system prompt: {e}")
         return None
 
-# --- API Key Configuration ---
+#API Key Configuration
 ACTUAL_API_KEY = os.environ.get("GOOGLE_API_KEY_FOR_APP")
 
 if not ACTUAL_API_KEY:
@@ -38,82 +41,39 @@ except Exception as e:
     st.caption("This might indicate an invalid API key or a problem with the Google Cloud project.")
     st.stop() 
 
-# --- Initialize Session State Variables (if not already present) ---
-if "system_prompt_for_chat" not in st.session_state:
-    st.session_state.system_prompt_for_chat = DEFAULT_SYSTEM_PROMPT
-if "active_reminder_phrase" not in st.session_state:
-    st.session_state.active_reminder_phrase = "" # Default to no reminder
+#Initialize Session State Variables (if not already present)
 if "user_turn_count" not in st.session_state:
     st.session_state.user_turn_count = 0
 if "messages" not in st.session_state:
     st.session_state.messages = []
+    
 
-
-# --- Sidebar ---
-st.sidebar.header("Mentor Configuration")
-custom_system_prompt_from_sidebar = st.sidebar.text_area(
-    "Define the mentor's main behavior (System Prompt):",
-    value=st.session_state.system_prompt_for_chat, 
-    height=250,
-    key="system_prompt_input_widget" 
-)
-
-if st.sidebar.button("Apply New System Prompt & Restart Chat"):
-    if custom_system_prompt_from_sidebar != st.session_state.system_prompt_for_chat:
-        st.session_state.system_prompt_for_chat = custom_system_prompt_from_sidebar
-        st.session_state.messages = []  
-        if "chat_session" in st.session_state:
-            del st.session_state.chat_session  
-        st.session_state.user_turn_count = 0 # Reset turn counter
-        st.sidebar.success("System prompt updated! Chat has been reset.")
-        st.rerun()  
-    else:
-        st.sidebar.info("System prompt is the same as the current one. No changes applied.")
-
-st.sidebar.markdown("---") 
-
-# New section for custom reminder phrase
-st.sidebar.header("In-Chat Reminder Phrase")
-reminder_phrase_input = st.sidebar.text_input(
-    "Short reminder to inject periodically (leave blank for none):",
-    value=st.session_state.active_reminder_phrase,
-    key="reminder_phrase_widget"
-)
-
-if st.sidebar.button("Update Reminder Phrase"):
-    if reminder_phrase_input != st.session_state.active_reminder_phrase:
-        st.session_state.active_reminder_phrase = reminder_phrase_input
-        st.sidebar.success("Reminder phrase updated!")
-        # No need to rerun or reset chat for this, it will be picked up on next applicable turn
-    else:
-        st.sidebar.info("Reminder phrase is the same. No changes applied.")
-
-
-# --- Load Model (based on the main system prompt) ---
-model = get_generative_model(st.session_state.system_prompt_for_chat)
+#Load Model based on the main system prompt
+model = get_generative_model(HARDCODED_SYSTEM_PROMPT)
 
 if not model:
     st.error("Failed to load/initialize the generative model. Application cannot proceed.")
     st.stop() 
 
-# --- Chat Session Initialization ---
+#Chat Session Initialization
 if "chat_session" not in st.session_state:
     st.session_state.chat_session = model.start_chat(history=[])
     if not st.session_state.get("messages"): 
          st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I assist you today?"}]
 
 
-# --- Main Application UI ---
+# Main Application UI
 st.title("LLM2LLL") 
-st.markdown("Welcome! This chat provides mentoring, guidance, and advice for occupational therapists. You can customize the mentor's behavior and reminders using the sidebar.") 
+# Change 6: Updated the welcome text (since there is no sidebar)
+st.markdown("Welcome! This chat provides mentoring and guidance for occupational therapists.") 
 st.caption("Powered by Gemini 2.5 Flash")
 
-# --- Displaying Chat History ---
+#Displaying Chat History 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]): 
         st.markdown(message["content"])
 
-# --- Getting User Input and Processing It ---
+#Getting User Input and Processing It 
 if user_input_from_chat := st.chat_input("Type your question here..."):
     st.session_state.user_turn_count += 1
 
@@ -127,13 +87,10 @@ if user_input_from_chat := st.chat_input("Type your question here..."):
             
             prompt_to_send_to_llm = user_input_from_chat 
             
-            # --- Conditionally augment prompt with CUSTOM reminder phrase ---
-            active_reminder = st.session_state.get("active_reminder_phrase", "") # Get custom reminder
-            REMINDER_FREQUENCY = 3 
+            #Using the reminder prompt
+
             if active_reminder and st.session_state.user_turn_count % REMINDER_FREQUENCY == 0:
-                # Using the custom reminder phrase now
                 prompt_to_send_to_llm = f"Reminder: '{active_reminder}'. Now, please address the user's message: '{user_input_from_chat}'"
-                # st.sidebar.caption(f"Custom reminder injected (Turn {st.session_state.user_turn_count}).")
             
             model_response = chat_session_to_use.send_message(prompt_to_send_to_llm)
             response_text = model_response.text
