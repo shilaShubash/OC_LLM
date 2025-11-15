@@ -12,6 +12,20 @@ from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langgraph.graph import StateGraph, END
 
+import streamlit as st
+import google.generativeai as genai
+import os
+
+from langgraph.graph import StateGraph, END
+
+st.error("Debugging: Listing files in current directory...")
+current_directory_files = os.listdir(".")
+st.write("Files found:")
+st.write(current_directory_files)
+
+HARDCODED_SYSTEM_PROMPT = "You are an experienced mentor..."
+
+
 #System Prompt
 HARDCODED_SYSTEM_PROMPT = "You are an experienced mentor for occupational therapists. You must provide professional, supportive and Short answers. Use clear and respectful language."
 DB_DIR = "db_chroma" 
