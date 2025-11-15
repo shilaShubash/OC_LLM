@@ -1,2 +1,8 @@
 streamlit
 google-generativeai
+langgraph
+langchain
+langchain-experimental
+chromadb
+pypdf
+langchain-google-genai
