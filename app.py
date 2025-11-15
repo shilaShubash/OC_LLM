@@ -49,6 +49,7 @@ except Exception as e:
     st.stop() 
 
 
+
 @st.cache_resource
 def get_tools():
     try:
@@ -58,7 +59,7 @@ def get_tools():
         vector_store = Chroma(
             persist_directory=DB_DIR, 
             embedding_function=embeddings,
-            collection_name="langchain"  
+            collection_name="my_collection"
         )
 
         retriever = vector_store.as_retriever(search_kwargs={"k": 3})
