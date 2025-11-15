@@ -12,19 +12,6 @@ from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langgraph.graph import StateGraph, END
 
-import streamlit as st
-import google.generativeai as genai
-import os
-
-from langgraph.graph import StateGraph, END
-
-st.error("Debugging: Listing files in current directory...")
-current_directory_files = os.listdir(".")
-st.write("Files found:")
-st.write(current_directory_files)
-
-HARDCODED_SYSTEM_PROMPT = "You are an experienced mentor..."
-
 
 #System Prompt
 HARDCODED_SYSTEM_PROMPT = "You are an experienced mentor for occupational therapists. You must provide professional, supportive and Short answers. Use clear and respectful language."
@@ -45,22 +32,23 @@ except Exception as e:
     st.stop() 
 
 
+
 @st.cache_resource
 def get_tools():
     try:
-        llm = ChatGoogleGenerativeAI(model="models/gemini-2.5-flash", temperature=0)
-        
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
         embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=ACTUAL_API_KEY)
         
-        if not os.path.exists(DB_DIR):
-            st.error(f"Error: Vector DB not found at '{DB_DIR}'. Please run the Ingestion cell first.")
-            return None, None
-            
         vector_store = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
-        retriever = vector_store.as_retriever(search_kwargs={"k": 3}) 
+        st.write("Vector DB loaded successfully.") 
+        
+        retriever = vector_store.as_retriever(search_kwargs={"k": 3})
         return llm, retriever
+
     except Exception as e:
-        st.error(f"Error initializing tools: {e}")
+        st.error(f"Error initializing tools (Failed to load ChromaDB): {e}")
+        st.error(f"Full path being checked: {os.path.abspath(DB_DIR)}")
+        st.error(f"Files in current directory: {os.listdir('.')}")
         return None, None
 
 llm, retriever = get_tools()
