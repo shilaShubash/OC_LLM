@@ -49,16 +49,18 @@ except Exception as e:
     st.stop() 
 
 
-
 @st.cache_resource
 def get_tools():
     try:
         llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
         embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=ACTUAL_API_KEY)
-        
-        vector_store = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
-       # st.write("Vector DB loaded successfully.") 
-        
+
+        vector_store = Chroma(
+            persist_directory=DB_DIR, 
+            embedding_function=embeddings,
+            collection_name="langchain"  
+        )
+
         retriever = vector_store.as_retriever(search_kwargs={"k": 3})
         return llm, retriever
 
