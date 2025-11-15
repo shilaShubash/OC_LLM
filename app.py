@@ -35,7 +35,7 @@ if not HARDCODED_SYSTEM_PROMPT:
 
 
 #Application Page Settings
-st.set_page_config(page_title="LLM2LLL RAG Mentor", page_icon="🧠")
+st.set_page_config(page_title="LLM2LLL Customizable Mentor", page_icon="None")
 
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY_FOR_APP") 
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
@@ -171,8 +171,8 @@ def build_graph():
 app_graph = build_graph()
 
 # Streamlit UI
-st.title("LLM2LLL RAG Mentor 🧠") 
-st.markdown("Welcome! This chat provides mentoring, based on your cloud knowledge base.") 
+st.title("LLM2LLL Occupational Therapy Mentor") 
+st.markdown("Welcome! This chat provides mentoring and guidance for occupational therapists.") 
 
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I assist you?"}]
