@@ -1,4 +1,3 @@
-
 import streamlit as st
 import google.generativeai as genai
 import os
@@ -100,9 +99,7 @@ def generate_rag_node(state: GraphState):
     QUESTION: {{question}}
     '''
     prompt = ChatPromptTemplate.from_template(rag_prompt_template)
-    context_str = "
-
-".join([doc.page_content for doc in documents])
+    context_str = "\n\n".join([doc.page_content for doc in documents])
     rag_chain = prompt | llm | StrOutputParser()
     answer = rag_chain.invoke({"context": context_str, "question": question})
     return {"answer": answer}
@@ -138,9 +135,7 @@ def grade_node(state: GraphState):
     QUESTION: {question}
     '''
     prompt = ChatPromptTemplate.from_template(grader_prompt_template)
-    context_str = "
-
-".join([doc.page_content for doc in documents])
+    context_str = "\n\n".join([doc.page_content for doc in documents])
     chain = prompt | structured_llm_grader
     try:
         grade = chain.invoke({"context": context_str, "question": question})
@@ -192,4 +187,3 @@ if user_input := st.chat_input("Type your question here..."):
             response_text = response.get("answer", "An error occurred.")
             st.markdown(response_text)
             st.session_state.messages.append({"role": "assistant", "content": response_text})
-
