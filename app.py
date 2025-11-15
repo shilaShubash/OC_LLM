@@ -1,109 +1,171 @@
+
+
 import streamlit as st
 import google.generativeai as genai
 import os
+from typing import List, TypedDict
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_community.vectorstores import Chroma
+from langchain_core.documents import Document
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
+from langchain_core.pydantic_v1 import BaseModel, Field
+from langgraph.graph import StateGraph, END
+
+#System Prompt
+HARDCODED_SYSTEM_PROMPT = "You are an experienced mentor for occupational therapists. You must provide professional, supportive and Short answers. Use clear and respectful language."
+DB_DIR = "db_chroma" 
 
 #Application Page Settings
-st.set_page_config(page_title="LLM2LLL Customizable Mentor", page_icon=None)
-
-#Prompts
-HARDCODED_SYSTEM_PROMPT = "You are an experienced mentor for occupational therapists. You must provide professional, supportive and Short answers. Use clear and respectful language."
-HARDCODED_REMINDER = "Remember to stay supportive and professional." # Leave "" (empty) to disable
-REMINDER_FREQUENCY = 3 # The reminder will be injected every N turns
-
-
-#Model Loading Function
-@st.cache_resource
-def get_generative_model(system_instruction_payload):
-    # Change 2: Removed the debug line that used the sidebar
-    # st.sidebar.write(f"DEBUG: ...") 
-    try:
-        model = genai.GenerativeModel(
-            model_name = "models/gemini-2.5-flash",
-            system_instruction=system_instruction_payload
-        )
-        return model
-    except Exception as e:
-        st.error(f"Error creating GenerativeModel with the provided system prompt: {e}")
-        return None
+st.set_page_config(page_title="LLM2LLL Customizable Mentor", page_icon="None")
 
 #API Key Configuration
-ACTUAL_API_KEY = os.environ.get("GOOGLE_API_KEY_FOR_APP")
-
+ACTUAL_API_KEY = os.environ.get("GOOGLE_API_KEY_FOR_APP") 
 if not ACTUAL_API_KEY:
-    st.error("Critical error: Google API key (GOOGLE_API_KEY_FOR_APP) is missing from environment secrets.")
-    st.caption("Please ensure you have correctly set this secret in your deployment platform. The application cannot proceed.")
+    st.error("Critical error: Google API key (GOOGLE_API_KEY_FOR_APP) is missing...")
     st.stop() 
-
 try:
     genai.configure(api_key=ACTUAL_API_KEY)
 except Exception as e:
-    st.error(f"Critical error: Error configuring the Google GenAI API with the provided key: {e}")
-    st.caption("This might indicate an invalid API key or a problem with the Google Cloud project.")
+    st.error(f"Critical error: Error configuring the Google GenAI API: {e}")
     st.stop() 
 
-#Initialize Session State Variables (if not already present)
-if "user_turn_count" not in st.session_state:
-    st.session_state.user_turn_count = 0
-if "messages" not in st.session_state:
-    st.session_state.messages = []
+
+@st.cache_resource
+def get_tools():
+    try:
+        llm = ChatGoogleGenerativeAI(model="models/gemini-2.5-flash", temperature=0)
+        
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=ACTUAL_API_KEY)
+        
+        if not os.path.exists(DB_DIR):
+            st.error(f"Error: Vector DB not found at '{DB_DIR}'. Please run the Ingestion cell first.")
+            return None, None
+            
+        vector_store = Chroma(persist_directory=DB_DIR, embedding_function=embeddings)
+        retriever = vector_store.as_retriever(search_kwargs={"k": 3}) 
+        return llm, retriever
+    except Exception as e:
+        st.error(f"Error initializing tools: {e}")
+        return None, None
+
+llm, retriever = get_tools()
+if not llm or not retriever:
+    st.stop()
+
+#LangGraph
+class GraphState(TypedDict):
+    question: str
+    documents: List[Document]
+    answer: str
+
+#Nodes
+def retrieve_node(state: GraphState):
+    question = state["question"]
+    documents = retriever.invoke(question)
+    return {"documents": documents, "question": question}
+
+def generate_rag_node(state: GraphState):
+    question = state["question"]
+    documents = state["documents"]
     
+    rag_prompt_template = f'''
+    {HARDCODED_SYSTEM_PROMPT}
+    Based on the following context documents, please answer the user's question.
+    If the context does not contain the answer, state that clearly.
+    CONTEXT:
+    ---
+    {{context}}
+    ---
+    QUESTION: {{question}}
+    '''
+    prompt = ChatPromptTemplate.from_template(rag_prompt_template)
+    context_str = "\n\n".join([doc.page_content for doc in documents])
+    rag_chain = prompt | llm | StrOutputParser()
+    answer = rag_chain.invoke({"context": context_str, "question": question})
+    return {"answer": answer}
 
-#Load Model based on the main system prompt
-model = get_generative_model(HARDCODED_SYSTEM_PROMPT)
+def fallback_node(state: GraphState):
+    question = state["question"]
+    fallback_prompt_template = f'''
+    {HARDCODED_SYSTEM_PROMPT}
+    The user asked: "{question}"
+    I could not find a relevant answer in my document library.
+    Please respond, letting them know the information is not available in the documents.
+    '''
+    prompt = ChatPromptTemplate.from_template(fallback_prompt_template)
+    fallback_chain = prompt | llm | StrOutputParser()
+    answer = fallback_chain.invoke({})
+    return {"answer": answer}
 
-if not model:
-    st.error("Failed to load/initialize the generative model. Application cannot proceed.")
-    st.stop() 
 
-#Chat Session Initialization
-if "chat_session" not in st.session_state:
-    st.session_state.chat_session = model.start_chat(history=[])
-    if not st.session_state.get("messages"): 
-         st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I assist you today?"}]
+class RelevanceGrader(BaseModel):
+    relevant: str = Field(description="Is the document relevant? 'yes' or 'no'.")
 
+def grade_node(state: GraphState):
+    question = state["question"]
+    documents = state["documents"]
+    
+    if not documents:
+        return "no"
+    structured_llm_grader = llm.with_structured_output(RelevanceGrader)
+    grader_prompt_template = '''
+    Are the following context documents relevant for answering the user's question?
+    Respond 'yes' or 'no'.
+    CONTEXT: --- {context} ---
+    QUESTION: {question}
+    '''
+    prompt = ChatPromptTemplate.from_template(grader_prompt_template)
+    context_str = "\n\n".join([doc.page_content for doc in documents])
+    chain = prompt | structured_llm_grader
+    try:
+        grade = chain.invoke({"context": context_str, "question": question})
+        return grade.relevant
+    except Exception:
+        return "no"
 
-# Main Application UI
+def decide_edge(state: GraphState):
+    relevance = grade_node(state)
+    if relevance == "yes":
+        return "generate_rag"
+    else:
+        return "fallback"
+
+@st.cache_resource
+def build_graph():
+    workflow = StateGraph(GraphState)
+    workflow.add_node("retrieve", retrieve_node)
+    workflow.add_node("generate_rag", generate_rag_node)
+    workflow.add_node("fallback", fallback_node)
+    workflow.set_entry_point("retrieve")
+    workflow.add_conditional_edges("retrieve", decide_edge, {"generate_rag": "generate_rag", "fallback": "fallback"})
+    workflow.add_edge("generate_rag", END)
+    workflow.add_edge("fallback", END)
+    return workflow.compile()
+
+app_graph = build_graph()
+
+# Streamlit
 st.title("LLM2LLL") 
-# Change 6: Updated the welcome text (since there is no sidebar)
 st.markdown("Welcome! This chat provides mentoring and guidance for occupational therapists.") 
-st.caption("Powered by Gemini 2.5 Flash")
 
-#Displaying Chat History 
+if "messages" not in st.session_state:
+    st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I assist you?"}]
+
 for message in st.session_state.messages:
     with st.chat_message(message["role"]): 
         st.markdown(message["content"])
 
-#Getting User Input and Processing It 
-if user_input_from_chat := st.chat_input("Type your question here..."):
-    st.session_state.user_turn_count += 1
-
-    st.session_state.messages.append({"role": "user", "content": user_input_from_chat})
+if user_input := st.chat_input("Type your question here..."):
+    st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"): 
-        st.markdown(user_input_from_chat)
+        st.markdown(user_input)
 
-    if "chat_session" in st.session_state: 
-        try:
-            chat_session_to_use = st.session_state.chat_session
-            
-            prompt_to_send_to_llm = user_input_from_chat 
-            
-            #Using the reminder prompt
-
-            if active_reminder and st.session_state.user_turn_count % REMINDER_FREQUENCY == 0:
-                prompt_to_send_to_llm = f"Reminder: '{active_reminder}'. Now, please address the user's message: '{user_input_from_chat}'"
-            
-            model_response = chat_session_to_use.send_message(prompt_to_send_to_llm)
-            response_text = model_response.text
-
+    with st.chat_message("assistant"):
+        with st.spinner("Retrieving, grading, and thinking"):
+            inputs = {"question": user_input}
+            response = app_graph.invoke(inputs, config={"recursion_limit": 5})
+            response_text = response.get("answer", "An error occurred.")
+            st.markdown(response_text)
             st.session_state.messages.append({"role": "assistant", "content": response_text})
-            with st.chat_message("assistant"): 
-                st.markdown(response_text)
 
-        except Exception as e:
-            error_for_display = f"Oops, an error occurred while communicating with the model: {e}"
-            st.session_state.messages.append({"role": "assistant", "content": error_for_display})
-            with st.chat_message("assistant"): 
-                st.error(error_for_display)
-            st.toast(f"Error: {e}")
-    else:
-        st.error("Chat session is not initialized. Please ensure the model and system prompt are correctly configured.")
