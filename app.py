@@ -2,16 +2,17 @@ import streamlit as st
 import google.generativeai as genai
 import os
 from typing import List, TypedDict
+
+from langchain_pinecone import PineconeVectorStore
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_community.vectorstores import Chroma
+
+
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.pydantic_v1 import BaseModel, Field
 from langgraph.graph import StateGraph, END
 
-
-#System Prompt
 
 PROMPT_FILE_PATH = "system_prompt.txt"
 
@@ -32,18 +33,20 @@ HARDCODED_SYSTEM_PROMPT = load_prompt(PROMPT_FILE_PATH)
 if not HARDCODED_SYSTEM_PROMPT:
     st.stop() 
 
-DB_DIR = "db_chroma" 
 
 #Application Page Settings
-st.set_page_config(page_title="LLM2LLL Customizable Mentor", page_icon="None")
+st.set_page_config(page_title="LLM2LLL RAG Mentor", page_icon="🧠")
 
-#API Key Configuration
-ACTUAL_API_KEY = os.environ.get("GOOGLE_API_KEY_FOR_APP") 
-if not ACTUAL_API_KEY:
-    st.error("Critical error: Google API key (GOOGLE_API_KEY_FOR_APP) is missing...")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY_FOR_APP") 
+PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
+PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME")
+
+
+if not GOOGLE_API_KEY or not PINECONE_API_KEY or not PINECONE_INDEX_NAME:
+    st.error("Critical error: Missing API keys (Google or Pinecone) in Streamlit secrets.")
     st.stop() 
 try:
-    genai.configure(api_key=ACTUAL_API_KEY)
+    genai.configure(api_key=GOOGLE_API_KEY)
 except Exception as e:
     st.error(f"Critical error: Error configuring the Google GenAI API: {e}")
     st.stop() 
@@ -54,28 +57,27 @@ except Exception as e:
 def get_tools():
     try:
         llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0)
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=ACTUAL_API_KEY)
+        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=GOOGLE_API_KEY)
+        
+        vector_store = PineconeVectorStore.from_existing_index(
+            index_name=PINECONE_INDEX_NAME,
+            embedding=embeddings
 
-        vector_store = Chroma(
-            persist_directory=DB_DIR, 
-            embedding_function=embeddings,
-            collection_name="my_collection"
         )
-
+        
         retriever = vector_store.as_retriever(search_kwargs={"k": 3})
         return llm, retriever
 
     except Exception as e:
-        st.error(f"Error initializing tools (Failed to load ChromaDB): {e}")
-        st.error(f"Full path being checked: {os.path.abspath(DB_DIR)}")
-        st.error(f"Files in current directory: {os.listdir('.')}")
+        st.error(f"Error initializing tools (Failed to connect to Pinecone): {e}")
         return None, None
 
 llm, retriever = get_tools()
 if not llm or not retriever:
     st.stop()
 
-#LangGraph
+
+#LangGraph State
 class GraphState(TypedDict):
     question: str
     documents: List[Document]
@@ -120,7 +122,7 @@ def fallback_node(state: GraphState):
     answer = fallback_chain.invoke({})
     return {"answer": answer}
 
-
+# Grader
 class RelevanceGrader(BaseModel):
     relevant: str = Field(description="Is the document relevant? 'yes' or 'no'.")
 
@@ -153,6 +155,7 @@ def decide_edge(state: GraphState):
     else:
         return "fallback"
 
+# Graph build
 @st.cache_resource
 def build_graph():
     workflow = StateGraph(GraphState)
@@ -167,9 +170,9 @@ def build_graph():
 
 app_graph = build_graph()
 
-# Streamlit
-st.title("LLM2LLL") 
-st.markdown("Welcome! This chat provides mentoring and guidance for occupational therapists.") 
+# Streamlit UI
+st.title("LLM2LLL RAG Mentor 🧠") 
+st.markdown("Welcome! This chat provides mentoring, based on your cloud knowledge base.") 
 
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant", "content": "Hello! How can I assist you?"}]
@@ -184,7 +187,7 @@ if user_input := st.chat_input("Type your question here..."):
         st.markdown(user_input)
 
     with st.chat_message("assistant"):
-        with st.spinner("Retrieving, grading, and thinking"):
+        with st.spinner("Retrieving, grading, and thinking..."):
             inputs = {"question": user_input}
             response = app_graph.invoke(inputs, config={"recursion_limit": 5})
             response_text = response.get("answer", "An error occurred.")
